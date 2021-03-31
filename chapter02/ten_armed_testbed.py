@@ -26,7 +26,7 @@ class Bandit:
     # @gradient: if True, use gradient based bandit algorithm
     # @gradient_baseline: if True, use average reward as baseline for gradient based bandit algorithm
     def __init__(self, k_arm=10, epsilon=0., initial=0., step_size=0.1, sample_averages=False, UCB_param=None,
-                 gradient=False, gradient_baseline=False, true_reward=0.):
+                 gradient=False, gradient_baseline=False, true_reward=0., true_reward_var=1., reward_var = 1.):
         self.k = k_arm
         self.step_size = step_size
         self.sample_averages = sample_averages
@@ -37,12 +37,14 @@ class Bandit:
         self.gradient_baseline = gradient_baseline
         self.average_reward = 0
         self.true_reward = true_reward
+        self.true_reward_var = true_reward_var
+        self.reward_var = reward_var
         self.epsilon = epsilon
         self.initial = initial
 
     def reset(self):
         # real reward for each action
-        self.q_true = np.random.randn(self.k) + self.true_reward
+        self.q_true = (np.random.randn(self.k) * self.true_reward_var) + self.true_reward
 
         # estimation for each action
         self.q_estimation = np.zeros(self.k) + self.initial
@@ -76,7 +78,7 @@ class Bandit:
     # take an action, update estimation for this action
     def step(self, action):
         # generate the reward under N(real reward, 1)
-        reward = np.random.randn() + self.q_true[action]
+        reward = (np.random.randn() * self.reward_var) + self.q_true[action]
         self.time += 1
         self.action_count[action] += 1
         self.average_reward += (reward - self.average_reward) / self.time
@@ -235,10 +237,71 @@ def figure_2_6(runs=2000, time=1000):
     plt.close()
 
 
+def plot(labels, parameters, rewards):
+    i = 0
+    for label, parameter in zip(labels, parameters):
+        l = len(parameter)
+        plt.plot(parameter, rewards[i:i+l], label=label)
+        i += l
+    plt.xlabel('Parameter(2^x)')
+    plt.ylabel('Average reward')
+    plt.legend()
+
+
+def do(k_arm = 10, true_reward_var = 1., reward_var = 1., time = 1000):
+    print(f'Running {k_arm=} {true_reward_var=} {reward_var=} {time=}')
+    # Default
+    runs = 2000
+
+    # Set up 4 agents
+    labels = ['epsilon-greedy', 'gradient bandit',
+              'UCB', 'optimistic initialization']
+    generators = [lambda epsilon:   Bandit(k_arm=k_arm, true_reward_var=true_reward_var, reward_var=reward_var, epsilon=epsilon, sample_averages=True),
+                  lambda alpha:     Bandit(k_arm=k_arm, true_reward_var=true_reward_var, reward_var=reward_var, gradient=True, step_size=alpha, gradient_baseline=True),
+                  lambda coef:      Bandit(k_arm=k_arm, true_reward_var=true_reward_var, reward_var=reward_var, epsilon=0, UCB_param=coef, sample_averages=True),
+                  lambda initial:   Bandit(k_arm=k_arm, true_reward_var=true_reward_var, reward_var=reward_var, epsilon=0, initial=initial, step_size=0.1)]
+    parameters = [np.arange(-7, -1, dtype=np.float),
+                  np.arange(-5, 2, dtype=np.float),
+                  np.arange(-4, 3, dtype=np.float),
+                  np.arange(-2, 3, dtype=np.float)]
+
+    bandits = []
+    for generator, parameter in zip(generators, parameters):
+        for param in parameter:
+            bandits.append(generator(pow(2, param)))
+
+    _, average_rewards = simulate(runs, time, bandits)
+    rewards = np.mean(average_rewards, axis=1)
+
+    plot(labels, parameters, rewards)
+
+    plt.savefig(f'../images/figure_2_6_{k_arm}_{true_reward_var}_{reward_var}_{time}.png')
+    plt.close()
+
+def do_wrapper(kw):
+    return do(**kw)
+
+def figure_2_6_extended():
+    from multiprocessing import Pool
+    q = []
+    for k_arm in (2, 50):
+        q.append({"k_arm": k_arm})
+    for true_reward_var in (0.1, 25.):
+        q.append({"true_reward_var": true_reward_var})
+    for reward_var in (0.1, 25.):
+        q.append({"reward_var": reward_var})
+    for time in (100, 2000):
+        q.append({"time": time})
+    
+    pool = Pool(6)
+    pool.map(do_wrapper, q)
+
+
 if __name__ == '__main__':
-    figure_2_1()
-    figure_2_2()
-    figure_2_3()
-    figure_2_4()
-    figure_2_5()
-    figure_2_6()
+    # figure_2_1()
+    # figure_2_2()
+    # figure_2_3()
+    # figure_2_4()
+    # figure_2_5()
+    # figure_2_6()
+    figure_2_6_extended()
